@@ -1,32 +1,30 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CardBook — loading V3.1.7</title></head>
-<body style="font-family:system-ui,sans-serif;background:#f5f7fb;color:#162033;display:grid;place-items:center;min-height:100vh;margin:0">
-<p id="status">Loading CardBook V3.1.7…</p>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CardBook — loading V3.1.8</title></head>
+<body style="font-family:system-ui,sans-serif;background:#f5f7fb;color:#162033;display:grid;place-items:center;min-height:100vh;margin:0"><p id="status">Loading CardBook V3.1.8…</p>
 <script>
 (async()=>{
-  const expected='6958e7ebcd98a4a59530507ca63f4aa1d8ebd4b5fbd65a17cc30e3d4fdc5e150';
-  try{
-    const responses=await Promise.all(Array.from({length:13},(_,i)=>'assets/cardbook-v317-'+String(i+1).padStart(2,'0')+'.txt').map(p=>fetch(p,{cache:'no-cache'})));
-    responses.forEach(r=>{if(!r.ok)throw new Error('Application download failed')});
-    const parts=await Promise.all(responses.map(r=>r.text()));
-    const encoded=parts.join('').replace(/\s/g,'');
-    const binary=atob(encoded),bytes=new Uint8Array(binary.length);
-    for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
-    if(typeof DecompressionStream==='undefined')throw new Error('Please open CardBook in an updated browser');
-    const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-    const raw=await new Response(stream).arrayBuffer();
-    const digest=await crypto.subtle.digest('SHA-256',raw);
-    const actual=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
-    if(actual!==expected)throw new Error('Application integrity check failed');
-    const html=new TextDecoder().decode(raw);
-    const frame=document.createElement('iframe');
-    frame.title='CardBook V3.1.7';
-    frame.style.cssText='position:fixed;inset:0;width:100%;height:100%;border:0;background:#f5f7fb';
-    frame.setAttribute('allow','clipboard-read; clipboard-write');
-    frame.src=URL.createObjectURL(new Blob([raw],{type:'text/html'}));
-    document.body.innerHTML='';document.body.style.display='block';document.body.appendChild(frame);
-  }catch(error){
-    document.getElementById('status').textContent='CardBook could not load: '+error.message;
-  }
+ const expected="b39580390c2acba1c9f74e95869ed0282b87c52eafbcfc60c5dc3a5cb105270d",replaceOnce=(oldValue,newValue)=>{if(html.split(oldValue).length!==2)throw new Error('Application update check failed');html=html.replace(oldValue,newValue)};
+ let html='';
+ try{
+  const responses=await Promise.all(Array.from({length:13},(_,i)=>'assets/cardbook-v317-'+String(i+1).padStart(2,'0')+'.txt').map(p=>fetch(p,{cache:'no-cache'})));
+  responses.forEach(r=>{if(!r.ok)throw new Error('Application download failed')});
+  const parts=await Promise.all(responses.map(r=>r.text())),encoded=parts.join('').replace(/\s/g,''),binary=atob(encoded),bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+  if(typeof DecompressionStream==='undefined')throw new Error('Please open CardBook in an updated browser');
+  const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')),oldRaw=await new Response(stream).arrayBuffer();
+  html=new TextDecoder().decode(oldRaw);
+  const parserStart=html.indexOf('function parseReceiptText(text){',html.indexOf('function paymentNote(text){')),parserEnd=html.indexOf('\nfunction parseAdvanceText(text){',parserStart);
+  if(parserStart<0||parserEnd<0)throw new Error('Application parser update failed');
+  html=html.slice(0,parserStart)+"function parseReceiptText(text){\n const clean=String(text||'').replace(/\\r/g,''),lines=clean.split('\\n').map(x=>x.trim()).filter(Boolean);\n let amount='';\n const paidAt=lines.findIndex(x=>/^paid to$/i.test(x)),\n       explicitAmount=line=>{const m=line.match(/(?:[₹¤#¥$]\\s*|Rs\\.?\\s*|INR\\s*)([\\d,]+(?:\\.\\d{1,2})?)/i);return m?m[1].replace(/,/g,''):''},\n       maskedIdentifier=line=>/@/.test(line)||/[*•%]/.test(line)||/^[^A-Za-z]*[Xx][^A-Za-z]*\\d{3,}/.test(line);\n if(paidAt>=0){\n  const block=[];\n  for(let i=paidAt+1;i<Math.min(lines.length,paidAt+4);i++){\n   const line=lines[i];\n   if(/banking name|sent to|payment details|transaction|debited from/i.test(line))break;\n   block.push(line);\n  }\n  // A currency-marked value is authoritative wherever OCR placed it in this block.\n  for(const line of block){const value=explicitAmount(line);if(value){amount=value;break}}\n  if(!amount&&block.length){\n   // Never collect a bare number from the UPI/account rows below the payee.\n   // PhonePe's ₹ is sometimes OCR-read as I or 3 immediately before the amount.\n   const line=block[0],match=line.match(/([\\d,]+(?:\\.\\d{1,2})?)\\s*$/);\n   if(match&&!maskedIdentifier(line)){\n    const raw=match[1];amount=raw.replace(/,/g,'');\n    if(!/,/.test(raw)&&/^[23]\\d{3}$/.test(amount))amount=amount.slice(1);\n   }\n  }\n }\n const amounts=[...clean.matchAll(/(?:[₹¤#¥$]|Rs\\.?|INR)\\s*([\\d,]+(?:\\.\\d{1,2})?)/gi)].map(m=>m[1].replace(/,/g,''));\n if(!amount)amount=amounts[0]||'';\n if(!amount){const m=clean.match(/^\\s*2(\\d[\\d,]*\\.\\d{2})\\s*$/m)||clean.match(/^\\s*([\\d,]+\\.\\d{1,2})\\s*$/m);if(m)amount=m[1].replace(/,/g,'')}\n let payee=paidAt>=0&&lines[paidAt+1]?cleanDetectedPayee(lines[paidAt+1]):'';\n const banking=clean.match(/Bank\\w*\\s+name\\s*:?\\s*([^\\n]+)/i),bankingName=banking?cleanDetectedPayee(banking[1]):'';\n if(bankingName&&(!payee||/^(?:G\\s*Pay|PhonePe)$/i.test(payee)||(/^(?:A|4)\\s+/.test(payee)&&payee.slice(2)===bankingName)))payee=bankingName;\n const patterns=[/paid to\\s*\\n+\\s*([^\\n]+)/i,/paid to\\s+([A-Za-z0-9][A-Za-z0-9 &.'-]{1,60})/i,/(?:sent to|purchased from)\\s*\\n+\\s*([^\\n]+)/i,/(?:sent to|purchased from)\\s+([A-Za-z0-9][A-Za-z0-9 &.'-]{1,60})/i,/payment should now be in\\s+([^\\n]+)/i,/electricity bill paid\\s*\\n+\\s*([^\\n]+)/i];\n if(!payee){for(const re of patterns){const m=clean.match(re);if(m){payee=cleanDetectedPayee(m[1]);if(payee)break}}}\n if(!payee){for(let i=0;i<lines.length;i++){if(/^(?:paid to|sent to|purchased from)$/i.test(lines[i])&&lines[i+1]){payee=cleanDetectedPayee(lines[i+1]);if(payee)break}}}\n if(!payee&&bankingName)payee=bankingName;\n const paidLine=lines.findIndex(x=>/^paid to$/i.test(x));if(!bankingName&&paidLine>=0&&lines[paidLine+1]&&lines[paidLine+2]&&/(?:[₹¤#¥$]\\s*)?\\d[\\d,]*(?:\\.\\d{1,2})?\\s*$/.test(lines[paidLine+1])&&/^[A-Za-z][A-Za-z &.'-]{1,40}$/.test(lines[paidLine+2])&&!/^(?:completed|transaction|payment|debited|powered)/i.test(lines[paidLine+2]))payee=cleanDetectedPayee(lines[paidLine+1]+' '+lines[paidLine+2]);\n const phonepe=((clean.match(/Ph[a-z]{3,5}Pe\\s+Transac[a-z]+\\s+[I1]D\\s*\\n?\\s*([A-Z0-9 ]{12,40})/i)||[])[1]||'').replace(/\\s/g,''),upi=(clean.match(/\\bUTR\\s*[:.]?\\s*(\\d{6,})/i)||[])[1]||'',gpay=(clean.match(/(?:UPI\\s+)?Transaction\\s+ID\\s*\\n?\\s*(\\d{6,})/i)||clean.match(/\\bUPI\\s+ID\\s*[:.]?\\s*(\\d{6,})/i)||clean.match(/^\\s*(\\d{12,})\\s*$/m)||[])[1]||'',reference=upi||phonepe||gpay,date=parsePaymentDate(clean),paymentMode=/phonepe|ph[a-z]{3,5}pe/i.test(clean)?'PhonePe':'Google Pay',notes=paymentNote(clean);return {amount,payee,reference,date,paymentMode,notes}\n}"+html.slice(parserEnd);
+  replaceOnce(".replace(/\\s+\\d[\\d,]*(?:\\.\\d{1,2})?\\s*$/,'')",".replace(/\\s+[Il|3]\\d{1,3}(?:\\.\\d{1,2})?\\s*$/i,'').replace(/\\s+\\d[\\d,]*(?:\\.\\d{1,2})?\\s*$/,'')");
+replaceOnce(".replace(/(GOWDA)([A-Z])(\\s+[A-Z])$/,'$1 $2$3').trim().slice(0,70)",".replace(/(GOWDA)([A-Z])(\\s+[A-Z])$/,'$1 $2$3').replace(/([A-Za-z])\\.(?=[A-Z]{1,3}\\b)/g,'$1 . ').replace(/\\b([A-Z])([A-Z])$/,'$1 $2').trim().slice(0,70)");
+replaceOnce("if(parsed.amount&&!parsed.date){const region=regions[i],scale=","if(parsed.amount&&!parsed.date){const region=regions.length===1?input:regions[i],scale=");
+  const noteStart=html.indexOf('function paymentNote(text){'),noteEnd=html.indexOf('function parseReceiptText(text){',noteStart),oldNoise="(?:[₹¤#¥$X]|Rs\\.?|INR)",newNoise="(?:[₹¤#¥$]|\\bRs\\.?\\s*\\d|\\bINR\\s*\\d)";
+  let note=html.slice(noteStart,noteEnd);if(noteStart<0||noteEnd<0||note.split(oldNoise).length!==3)throw new Error('Application caption update failed');note=note.split(oldNoise).join(newNoise);html=html.slice(0,noteStart)+note+html.slice(noteEnd);
+  html=html.split('V3.1.7').join('V3.1.8').split('3.1.7').join('3.1.8');
+  const raw=new TextEncoder().encode(html),digest=await crypto.subtle.digest('SHA-256',raw),actual=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
+  if(actual!==expected)throw new Error('Application integrity check failed');
+  const frame=document.createElement('iframe');frame.title='CardBook V3.1.8';frame.style.cssText='position:fixed;inset:0;width:100%;height:100%;border:0;background:#f5f7fb';frame.setAttribute('allow','clipboard-read; clipboard-write');frame.src=URL.createObjectURL(new Blob([raw],{type:'text/html'}));document.body.innerHTML='';document.body.style.display='block';document.body.appendChild(frame);
+ }catch(error){document.getElementById('status').textContent='CardBook could not load: '+error.message}
 })();
 </script></body></html>
